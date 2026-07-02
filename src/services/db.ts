@@ -122,24 +122,35 @@ const initializeMockDB = (userId: string) => {
 // AUTHENTICATION AND PROFILE OPERATIONS
 // ========================================================
 
+// -------------------------------------------------------
+// Helper: convert register number to internal fake email
+// e.g. "23MCS012" -> "23mcs012@rkmvc.local"
+// This lets Supabase Auth work without sending real emails.
+// -------------------------------------------------------
+const regToEmail = (regNumber: string) =>
+  `${regNumber.trim().toLowerCase()}@rkmvc.local`;
+
 export const dbAuth = {
   isDemoMode: !isSupabaseConfigured,
 
-  signUp: async (email: string, password: string, name: string, details: Partial<UserProfile>) => {
+  // registerNumber + password + profile details
+  signUp: async (registerNumber: string, password: string, name: string, details: Partial<UserProfile>) => {
+    const internalEmail = regToEmail(registerNumber);
+
     if (!isSupabaseConfigured) {
       await sleep(MOCK_DELAY);
       const mockProfiles = getMockData<UserProfile[]>('cozy_profiles', []);
-      
-      if (mockProfiles.some(p => p.email.toLowerCase() === email.toLowerCase())) {
-        throw new Error('User with this email already exists.');
+
+      if (mockProfiles.some(p => p.register_number?.toLowerCase() === registerNumber.trim().toLowerCase())) {
+        throw new Error('An account with this registration number already exists.');
       }
 
       const newId = crypto.randomUUID();
       const newProfile: UserProfile = {
         id: newId,
         name,
-        email,
-        register_number: details.register_number || '',
+        email: internalEmail,
+        register_number: registerNumber.trim().toUpperCase(),
         department: details.department || '',
         semester: details.semester || 1,
         section: details.section || '',
@@ -148,20 +159,19 @@ export const dbAuth = {
 
       mockProfiles.push(newProfile);
       setMockData('cozy_profiles', mockProfiles);
-      
-      // Save session
       setMockData('cozy_session', newProfile);
       initializeMockDB(newId);
-      
-      return { user: { id: newId, email }, profile: newProfile, error: null };
+
+      return { user: { id: newId, email: internalEmail }, profile: newProfile, error: null };
     } else {
       const { data, error } = await supabase!.auth.signUp({
-        email,
+        email: internalEmail,
         password,
         options: {
+          emailRedirectTo: undefined,
           data: {
             name,
-            register_number: details.register_number,
+            register_number: registerNumber.trim().toUpperCase(),
             department: details.department,
             semester: details.semester,
             section: details.section,
@@ -170,8 +180,8 @@ export const dbAuth = {
       });
       if (error) return { user: null, profile: null, error };
 
-      // Wait a moment for trigger to create user row
-      await sleep(500);
+      // Immediately insert profile row (trigger may also do this)
+      await sleep(600);
       const { data: profile, error: pError } = await supabase!
         .from('users')
         .select('*')
@@ -182,23 +192,30 @@ export const dbAuth = {
     }
   },
 
-  signIn: async (email: string, password: string) => {
+  // Login with register number + password
+  signIn: async (registerNumber: string, password: string) => {
+    const internalEmail = regToEmail(registerNumber);
+
     if (!isSupabaseConfigured) {
       await sleep(MOCK_DELAY);
       const mockProfiles = getMockData<UserProfile[]>('cozy_profiles', []);
-      const profile = mockProfiles.find(p => p.email.toLowerCase() === email.toLowerCase());
+      const profile = mockProfiles.find(
+        p => p.register_number?.toLowerCase() === registerNumber.trim().toLowerCase()
+      );
 
       if (!profile) {
-        throw new Error('Invalid email or password.');
+        throw new Error('Invalid registration number or password.');
       }
 
-      // Accept any password for mock convenience
       setMockData('cozy_session', profile);
       initializeMockDB(profile.id);
 
       return { user: { id: profile.id, email: profile.email }, profile, error: null };
     } else {
-      const { data, error } = await supabase!.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase!.auth.signInWithPassword({
+        email: internalEmail,
+        password
+      });
       if (error) return { user: null, profile: null, error };
 
       const { data: profile, error: pError } = await supabase!
@@ -254,8 +271,7 @@ export const dbAuth = {
       const updatedProfile = { ...mockProfiles[idx], ...updates };
       mockProfiles[idx] = updatedProfile;
       setMockData('cozy_profiles', mockProfiles);
-      
-      // Update session if it's the current user
+
       const session = getMockData<UserProfile | null>('cozy_session', null);
       if (session && session.id === userId) {
         setMockData('cozy_session', updatedProfile);
