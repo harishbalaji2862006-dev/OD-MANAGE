@@ -145,15 +145,18 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                 <input
                   id="reg_number_input"
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   required
                   value={registerNumber}
-                  onChange={(e) => setRegisterNumber(e.target.value.toUpperCase())}
-                  placeholder="e.g. 23MCS012"
+                  onChange={(e) => setRegisterNumber(e.target.value.replace(/\D/g, ''))}
+                  placeholder="e.g. 2413281033018"
+                  maxLength={20}
                   className="w-full pl-10 pr-4 py-2.5 bg-white/80 border border-slate-200 focus:border-brand-cozy focus:ring-1 focus:ring-brand-cozy outline-none rounded-cozy-lg transition-all text-slate-700 font-bold tracking-wider placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400 text-sm"
                 />
               </div>
               <p className="text-[10px] text-slate-400 mt-1 ml-1">
-                Same as your AIMS portal registration number
+                Numbers only — same as your AIMS portal registration number
               </p>
             </div>
 
