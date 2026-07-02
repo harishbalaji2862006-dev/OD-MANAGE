@@ -178,17 +178,43 @@ export const dbAuth = {
           }
         }
       });
+
+      // If Supabase returns an error, propagate it
       if (error) return { user: null, profile: null, error };
 
-      // Immediately insert profile row (trigger may also do this)
-      await sleep(600);
+      const userId = data.user?.id;
+      if (!userId) {
+        return { user: null, profile: null, error: { message: 'Account creation failed. Please try again.' } };
+      }
+
+      // Wait briefly for the DB trigger to run, then upsert the profile
+      // manually in case email confirmation is still enabled (user exists but unconfirmed).
+      await sleep(800);
+
+      const profileData = {
+        id: userId,
+        name,
+        email: internalEmail,
+        register_number: registerNumber.trim().toUpperCase(),
+        department: details.department || '',
+        semester: details.semester || 1,
+        section: details.section || '',
+      };
+
+      // Upsert so this works whether or not the trigger already created the row
       const { data: profile, error: pError } = await supabase!
         .from('users')
-        .select('*')
-        .eq('id', data.user?.id)
+        .upsert(profileData, { onConflict: 'id' })
+        .select()
         .single();
 
-      return { user: data.user, profile, error: pError };
+      if (pError) {
+        // Profile insert failed but auth user was created — still return user so they can sign in
+        console.warn('Profile upsert warning:', pError.message);
+        return { user: data.user, profile: profileData as any, error: null };
+      }
+
+      return { user: data.user, profile, error: null };
     }
   },
 

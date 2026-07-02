@@ -56,15 +56,17 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
         if (profile) onAuthSuccess(profile, dbAuth.isDemoMode);
       }
     } catch (err: any) {
-      const msg = err?.message || '';
-      // Friendly messages
+      const msg: string = err?.message || err?.error_description || JSON.stringify(err) || '';
+      // Friendly override for known errors
       if (msg.includes('already registered') || msg.includes('already exists')) {
-        setError('This registration number is already registered. Please sign in.');
-      } else if (msg.includes('Invalid login') || msg.includes('Invalid registration')) {
-        setError('Incorrect registration number or password. Please try again.');
-      } else if (msg.includes('rate limit') || msg.includes('email')) {
-        setError('Server is busy. Please wait a moment and try again.');
+        setError('This registration number is already registered. Try signing in instead.');
+      } else if (msg.includes('Invalid login credentials')) {
+        setError('Incorrect registration number or password. Please check and try again.');
+      } else if (msg.includes('Email not confirmed')) {
+        // Email confirmation is still ON in Supabase — guide the user
+        setError('⚠️ Email confirmation is enabled in Supabase. Go to Supabase Dashboard → Authentication → Providers → Email → turn OFF "Confirm email" → Save.');
       } else {
+        // Always show the real error so you can diagnose it
         setError(msg || 'Something went wrong. Please try again.');
       }
     } finally {
