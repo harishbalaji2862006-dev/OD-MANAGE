@@ -128,7 +128,7 @@ const initializeMockDB = (userId: string) => {
 // This lets Supabase Auth work without sending real emails.
 // -------------------------------------------------------
 const regToEmail = (regNumber: string) =>
-  `${regNumber.trim().toLowerCase()}@rkmvc.local`;
+  `${regNumber.trim().toLowerCase()}@student.rkmvc.ac.in`;
 
 export const dbAuth = {
   isDemoMode: !isSupabaseConfigured,
