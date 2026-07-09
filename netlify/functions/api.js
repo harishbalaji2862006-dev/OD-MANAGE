@@ -89,7 +89,7 @@ app.post('/api/login', async (req, res) => {
       finalCookieString = `${cookie}; ${parsedNew}`;
     }
 
-    const attendanceRes = await axios.get(`${BASE_URL}/student/attendance`, {
+    const attendanceRes = await axios.get(`${BASE_URL}/student/AttndReport`, {
       httpAgent, httpsAgent,
       headers: {
         'Cookie': finalCookieString,
@@ -100,18 +100,78 @@ app.post('/api/login', async (req, res) => {
 
     const $ = cheerio.load(attendanceRes.data);
     const attendanceData = [];
-    $('table.attendance-grid tr, table.table tr').each((i, row) => {
-      if (i === 0) return;
-      const columns = $(row).find('td');
-      if (columns.length >= 3) {
-        const subject = $(columns[0]).text().trim();
-        const attended = parseInt($(columns[1]).text().trim(), 10);
-        const total = parseInt($(columns[2]).text().trim(), 10);
-        
-        if (subject && !isNaN(attended) && !isNaN(total)) {
-          attendanceData.push({ subject, attended, total });
+    
+    // Smart parsing for unknown table structure
+    $('table').each((tableIdx, table) => {
+      let subjectCol = -1;
+      let totalCol = -1;
+      let attendedCol = -1;
+      let presentCol = -1;
+
+      // Find headers
+      $(table).find('tr').first().find('th, td').each((i, el) => {
+        const headerText = $(el).text().toLowerCase().trim();
+        if (headerText.includes('subject') || headerText.includes('course name')) subjectCol = i;
+        if (headerText.includes('total') || headerText.includes('conducted')) totalCol = i;
+        if (headerText.includes('attend') || headerText.includes('present')) {
+          if (attendedCol === -1) attendedCol = i;
         }
-      }
+      });
+
+      // Fallback heuristics if headers aren't explicitly named
+      if (subjectCol === -1) subjectCol = 1; // Usually Sl No is 0, Subject is 1 or 2
+      
+      $(table).find('tr').each((i, row) => {
+        if (i === 0) return; // Skip header
+        const columns = $(row).find('td');
+        if (columns.length >= 3) {
+          // If we didn't find headers, try to guess based on numbers
+          if (totalCol === -1 || attendedCol === -1) {
+             let nums = [];
+             columns.each((idx, col) => {
+               const val = $(col).text().trim();
+               if (/^\d+$/.test(val)) nums.push({ idx, val: parseInt(val, 10) });
+             });
+             if (nums.length >= 2) {
+               // Usually total > attended
+               if (nums[0].val >= nums[1].val) {
+                 totalCol = nums[0].idx;
+                 attendedCol = nums[1].idx;
+               } else {
+                 totalCol = nums[1].idx;
+                 attendedCol = nums[0].idx;
+               }
+             }
+          }
+
+          const subject = subjectCol !== -1 && $(columns[subjectCol]) ? $(columns[subjectCol]).text().trim() : $(columns[0]).text().trim();
+          const totalText = totalCol !== -1 && $(columns[totalCol]) ? $(columns[totalCol]).text().trim() : '';
+          const attendedText = attendedCol !== -1 && $(columns[attendedCol]) ? $(columns[attendedCol]).text().trim() : '';
+          
+          let attended = parseInt(attendedText, 10);
+          let total = parseInt(totalText, 10);
+          
+          // Fallback if parsing failed but there are numbers
+          if (isNaN(attended) || isNaN(total)) {
+            let nums = [];
+            columns.each((idx, col) => {
+              const val = $(col).text().trim();
+              if (/^\d+$/.test(val)) nums.push(parseInt(val, 10));
+            });
+            if (nums.length >= 2) {
+              total = Math.max(nums[0], nums[1]);
+              attended = Math.min(nums[0], nums[1]);
+            }
+          }
+
+          if (subject && subject.length > 2 && !isNaN(attended) && !isNaN(total)) {
+             // Avoid adding duplicates or totals row
+             if (!subject.toLowerCase().includes('total') && !subject.toLowerCase().includes('overall')) {
+                attendanceData.push({ subject, attended, total });
+             }
+          }
+        }
+      });
     });
 
     if (attendanceData.length === 0) {
