@@ -16,6 +16,9 @@ export interface AttendanceRecord {
   attended_classes: number;
   total_classes: number;
   attendance_percentage: number;
+  class_hours?: number;
+  hours_attended?: number;
+  teacher?: string;
   last_updated?: string;
 }
 

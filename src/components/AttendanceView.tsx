@@ -191,6 +191,12 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                 <div className="flex-1 space-y-1 pl-1">
                   <h4 className="font-bold text-slate-700 font-display text-sm sm:text-base">{record.subject}</h4>
                   
+                  {record.teacher && (
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      👨‍🏫 {record.teacher}
+                    </p>
+                  )}
+
                   <div className="flex items-center gap-2 mt-1">
                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold ${
                       record.attendance_percentage >= 75 ? 'bg-cozy-green text-cozy-green-dark' : 'bg-cozy-peach text-cozy-peach-dark'
@@ -198,9 +204,21 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                       {record.attendance_percentage}%
                     </span>
                     <span className="text-xs text-slate-400 font-semibold">
-                      ({record.attended_classes} Attended out of {record.total_classes} Conducted)
+                      ({record.attended_classes} of {record.total_classes} classes)
                     </span>
                   </div>
+
+                  {/* Extra portal stats row */}
+                  {(record.class_hours != null || record.hours_attended != null) && (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
+                      <span className="text-[10px] text-slate-400 font-semibold">
+                        📘 Total Hrs: <strong className="text-slate-600">{record.class_hours?.toFixed(2)}</strong>
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-semibold">
+                        ✅ Attended Hrs: <strong className="text-slate-600">{record.hours_attended?.toFixed(2)}</strong>
+                      </span>
+                    </div>
+                  )}
 
                   {/* Visual Progress Bar */}
                   <div className="w-full bg-slate-100 h-2 rounded-full mt-3 overflow-hidden border border-slate-50">

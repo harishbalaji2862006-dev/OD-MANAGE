@@ -129,112 +129,133 @@ app.post('/api/login', async (req, res) => {
     });
 
     const $ = cheerio.load(attendanceRes.data);
+
+    // ── Text-based parser ──────────────────────────────────────────
+    // The AIMS portal renders attendance using non-standard HTML that
+    // Cheerio's $('table') selector cannot find.  Instead, we strip
+    // scripts/styles and parse the clean text content using the
+    // bracketed course-code pattern [XXXXX] as anchors.
+
+    $('script, style, link').remove();
+    const pageText = $.text().replace(/\s+/g, ' ').trim();
+
+    // Abort early if the page is actually the login page (session expired)
+    if (pageText.includes('login-box') || (attendanceRes.data.includes('login-box') && !pageText.includes('Current Semester'))) {
+      return res.status(401).json({ error: 'Session expired – the portal redirected back to the login page. Please try again.' });
+    }
+
+    // Isolate the "Current Semester Attendance Details" section
+    const currentSemStart = pageText.indexOf('Current Semester');
+    const prevSemStart   = pageText.indexOf('Previous Semesters');
+    const currentSemText = currentSemStart >= 0
+      ? pageText.substring(currentSemStart, prevSemStart > currentSemStart ? prevSemStart : undefined)
+      : pageText;
+
+    // Find every course code [XXXXX]
+    const codeRegex = /\[([A-Z][A-Z0-9]+)\]/g;
+    const codes = [];
+    let m;
+    while ((m = codeRegex.exec(currentSemText)) !== null) {
+      codes.push({ code: m[1], start: m.index, end: m.index + m[0].length });
+    }
+
     const attendanceData = [];
-    
-    // Smart parsing for unknown table structure
-    $('table').each((tableIdx, table) => {
-      let subjectCol = -1;
-      let totalCol = -1;
-      let attendedCol = -1;
-      let presentCol = -1;
 
-      // Find headers
-      $(table).find('tr').first().find('th, td').each((i, el) => {
-        const headerText = $(el).text().toLowerCase().trim();
-        if (headerText.includes('subject') || headerText.includes('course name')) subjectCol = i;
-        if (headerText.includes('total') || headerText.includes('conducted')) totalCol = i;
-        if (headerText.includes('attend') || headerText.includes('present')) {
-          if (attendedCol === -1) attendedCol = i;
+    for (let i = 0; i < codes.length; i++) {
+      const { code, start, end } = codes[i];
+
+      // ── Course name ──
+      // Text before [CODE] contains: "... <serial> <semester> <COURSE NAME> "
+      const beforeText = currentSemText.substring(
+        i > 0 ? codes[i - 1].end : 0,
+        start
+      ).trim();
+
+      // Walk backwards through tokens to find the course name
+      // (everything after the last "<serial> <semester>" pair)
+      const words = beforeText.split(/\s+/);
+      const courseWords = [];
+      for (let j = words.length - 1; j >= 0; j--) {
+        // Two consecutive 1-2 digit numbers = serial + semester
+        if (/^\d{1,2}$/.test(words[j]) && j > 0 && /^\d{1,2}$/.test(words[j - 1])) {
+          break;
         }
-      });
+        courseWords.unshift(words[j]);
+      }
+      const courseName = courseWords.join(' ').trim() || code;
 
-      // Fallback heuristics if headers aren't explicitly named
-      if (subjectCol === -1) subjectCol = 1; // Usually Sl No is 0, Subject is 1 or 2
-      
-      $(table).find('tr').each((i, row) => {
-        if (i === 0) return; // Skip header
-        const columns = $(row).find('td');
-        if (columns.length >= 3) {
-          // If we didn't find headers, try to guess based on numbers
-          if (totalCol === -1 || attendedCol === -1) {
-             let nums = [];
-             columns.each((idx, col) => {
-               const val = $(col).text().trim();
-               if (/^\d+$/.test(val)) nums.push({ idx, val: parseInt(val, 10) });
-             });
-             if (nums.length >= 2) {
-               // Usually total > attended
-               if (nums[0].val >= nums[1].val) {
-                 totalCol = nums[0].idx;
-                 attendedCol = nums[1].idx;
-               } else {
-                 totalCol = nums[1].idx;
-                 attendedCol = nums[0].idx;
-               }
-             }
-          }
+      // ── Attendance numbers ──
+      // Text after [CODE] contains: "<teacher?> <held> <attended> <classHrs> <hrsAttd> <pct|NA> ..."
+      const nextBoundary = i < codes.length - 1 ? codes[i + 1].start : currentSemText.length;
+      const afterText = currentSemText.substring(end, nextBoundary).trim();
 
-          const subject = subjectCol !== -1 && $(columns[subjectCol]) ? $(columns[subjectCol]).text().trim() : $(columns[0]).text().trim();
-          const totalText = totalCol !== -1 && $(columns[totalCol]) ? $(columns[totalCol]).text().trim() : '';
-          const attendedText = attendedCol !== -1 && $(columns[attendedCol]) ? $(columns[attendedCol]).text().trim() : '';
-          
-          let attended = parseInt(attendedText, 10);
-          let total = parseInt(totalText, 10);
-          
-          // Fallback if parsing failed but there are numbers
-          if (isNaN(attended) || isNaN(total)) {
-            let nums = [];
-            columns.each((idx, col) => {
-              const val = $(col).text().trim();
-              if (/^\d+$/.test(val)) nums.push(parseInt(val, 10));
-            });
-            if (nums.length >= 2) {
-              total = Math.max(nums[0], nums[1]);
-              attended = Math.min(nums[0], nums[1]);
-            }
-          }
-
-          if (subject && subject.length > 2 && !isNaN(attended) && !isNaN(total)) {
-             // Avoid adding duplicates or totals row
-             if (!subject.toLowerCase().includes('total') && !subject.toLowerCase().includes('overall')) {
-                attendanceData.push({ subject, attended, total });
-             }
-          }
+      // Find the first run of 4-5 consecutive numeric tokens (teacher names have no standalone numbers)
+      const tokens = afterText.split(/\s+/);
+      const nums = [];
+      let started = false;
+      for (const tok of tokens) {
+        if (/^\d+(\.\d+)?$/.test(tok) || tok === 'NA') {
+          started = true;
+          nums.push(tok);
+          if (nums.length >= 5) break;
+        } else if (started) {
+          break;
         }
-      });
-    });
+      }
+
+      // Also try to extract teacher name (text between [CODE] and the first number)
+      let teacher = '';
+      for (const tok of tokens) {
+        if (/^\d+(\.\d+)?$/.test(tok) || tok === 'NA') break;
+        teacher += (teacher ? ' ' : '') + tok;
+      }
+
+      if (nums.length >= 4) {
+        const held        = parseInt(nums[0], 10);
+        const attended    = parseInt(nums[1], 10);
+        const classHours  = parseFloat(nums[2]);
+        const hrsAttended = parseFloat(nums[3]);
+        const pctStr      = nums[4] || 'NA';
+        const percentage  = pctStr === 'NA'
+          ? (held === 0 ? 0 : Math.round((attended / held) * 10000) / 100)
+          : parseFloat(pctStr);
+
+        attendanceData.push({
+          subject: `${courseName} [${code}]`,
+          teacher: teacher || '',
+          attended,
+          total: held,
+          classHours,
+          hoursAttended: hrsAttended,
+          percentage
+        });
+      }
+    }
+
+    // ── Previous semesters ──
+    const previousSemesters = [];
+    if (prevSemStart >= 0) {
+      const prevText = pageText.substring(prevSemStart);
+      // Pattern: <serial> <semester> <percentage> <status>
+      const prevRegex = /(\d+)\s+(\d+)\s+(\d+)\s+(Regular|Detained|Short)/gi;
+      let pm;
+      while ((pm = prevRegex.exec(prevText)) !== null) {
+        previousSemesters.push({
+          semester: parseInt(pm[2], 10),
+          percentage: parseInt(pm[3], 10),
+          status: pm[4]
+        });
+      }
+    }
 
     if (attendanceData.length === 0) {
       const pageTitle = $('title').text().trim() || 'No Title';
-      const isLoginBox = attendanceRes.data.includes('login-box') ? 'Yes' : 'No';
-      // Return raw HTML chunks as subject names for visual debugging
-      const bodyHtml = $('body').html() || attendanceRes.data;
-      // Strip scripts and styles to focus on content
-      const $dbg = cheerio.load(bodyHtml);
-      $dbg('script, style, link, meta').remove();
-      const cleanHtml = $dbg.text().replace(/\s+/g, ' ').trim();
-      
-      const debugData = [
-        { subject: `[INFO] HTTP ${attendanceRes.status} | Title: ${pageTitle} | LoginBox: ${isLoginBox} | Len: ${attendanceRes.data.length}`, attended: 0, total: 0 },
-      ];
-      
-      // Split clean text into ~200 char chunks and add as subjects
-      for (let i = 0; i < Math.min(cleanHtml.length, 2000); i += 200) {
-        debugData.push({
-          subject: `[HTML ${i}] ${cleanHtml.substring(i, i + 200)}`,
-          attended: 0,
-          total: 0
-        });
-      }
-      
-      console.warn('Could not find attendance tables. Returning HTML debug chunks.');
-      return res.json({
-        success: true,
-        data: debugData
+      return res.status(500).json({
+        error: `Could not parse attendance data from the portal. Page title: "${pageTitle}", length: ${attendanceRes.data.length}. The portal structure may have changed.`
       });
     }
 
-    res.json({ success: true, data: attendanceData });
+    res.json({ success: true, data: attendanceData, previousSemesters });
   } catch (err) {
     console.error('Login error:', err.message);
     res.status(500).json({ error: `Failed to communicate with portal: ${err.message}` });

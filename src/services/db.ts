@@ -315,7 +315,12 @@ export const dbAuth = {
             subject: item.subject,
             attended_classes: item.attended,
             total_classes: item.total,
-            attendance_percentage: item.total === 0 ? 100 : Math.round((item.attended / item.total) * 10000) / 100,
+            attendance_percentage: item.percentage != null
+              ? item.percentage
+              : (item.total === 0 ? 0 : Math.round((item.attended / item.total) * 10000) / 100),
+            class_hours: item.classHours ?? undefined,
+            hours_attended: item.hoursAttended ?? undefined,
+            teacher: item.teacher ?? undefined,
             last_updated: new Date().toISOString()
           });
         }
