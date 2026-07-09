@@ -82,11 +82,41 @@ app.post('/api/login', async (req, res) => {
        return res.status(401).json({ error: errorText });
     }
 
-    let finalCookieString = cookie;
+    // Correct cookie merging (overwrite old with new)
+    let cookieMap = {};
+    cookie.split(';').forEach(c => {
+      const parts = c.trim().split('=');
+      if (parts[0]) cookieMap[parts[0]] = parts.slice(1).join('=');
+    });
+    
     const newCookies = loginRes.headers['set-cookie'];
     if (newCookies) {
-      const parsedNew = newCookies.map(c => c.split(';')[0]).join('; ');
-      finalCookieString = `${cookie}; ${parsedNew}`;
+      newCookies.forEach(c => {
+        const parts = c.split(';')[0].split('=');
+        if (parts[0]) cookieMap[parts[0]] = parts.slice(1).join('=');
+      });
+    }
+    let finalCookieString = Object.entries(cookieMap).map(([k, v]) => `${k}=${v}`).join('; ');
+
+    // Mimic real browser flow: Visit dashboard first to initialize session
+    const dashRes = await axios.get(`${BASE_URL}/student/dashboard`, {
+      httpAgent, httpsAgent,
+      headers: {
+        'Cookie': finalCookieString,
+        'Referer': 'https://aims.rkmvc.ac.in/student/loginPage',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      validateStatus: () => true
+    });
+
+    // Update cookies again
+    const dashCookies = dashRes.headers['set-cookie'];
+    if (dashCookies) {
+      dashCookies.forEach(c => {
+        const parts = c.split(';')[0].split('=');
+        if (parts[0]) cookieMap[parts[0]] = parts.slice(1).join('=');
+      });
+      finalCookieString = Object.entries(cookieMap).map(([k, v]) => `${k}=${v}`).join('; ');
     }
 
     const attendanceRes = await axios.get(`${BASE_URL}/student/AttndReport`, {
