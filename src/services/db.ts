@@ -130,6 +130,30 @@ const initializeMockDB = (userId: string) => {
 const regToEmail = (regNumber: string) =>
   `${regNumber.trim().toLowerCase()}@student.rkmvc.ac.in`;
 
+const DEMO_REG_NO = '2413281033018';
+const seedDemoStudent = () => {
+  if (isSupabaseConfigured) return;
+  const mockProfiles = getMockData<UserProfile[]>('cozy_profiles', []);
+  if (!mockProfiles.some(p => p.register_number?.toLowerCase() === DEMO_REG_NO.toLowerCase())) {
+    const demoId = 'demo-user-id';
+    const newProfile: UserProfile = {
+      id: demoId,
+      name: 'Demo Student',
+      email: regToEmail(DEMO_REG_NO),
+      register_number: DEMO_REG_NO,
+      department: 'Computer Science',
+      semester: 4,
+      section: 'A',
+      created_at: new Date().toISOString(),
+    };
+    mockProfiles.push(newProfile);
+    setMockData('cozy_profiles', mockProfiles);
+    initializeMockDB(demoId); // This ensures attendance and OD records are created for this user
+  }
+};
+seedDemoStudent();
+
+
 export const dbAuth = {
   isDemoMode: !isSupabaseConfigured,
 
@@ -218,23 +242,87 @@ export const dbAuth = {
     }
   },
 
-  // Login with register number + password
-  signIn: async (registerNumber: string, password: string) => {
+  // Login with register number + password + captcha
+  signIn: async (registerNumber: string, password: string, captcha?: string, cookie?: string) => {
     const internalEmail = regToEmail(registerNumber);
+
+    // Try logging in via portal proxy if captcha and cookie are provided
+    let proxyData: any = null;
+    if (captcha && cookie) {
+      try {
+        const proxyRes = await fetch('http://localhost:3001/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_code: registerNumber,
+            password,
+            captcha,
+            cookie
+          })
+        });
+        const resData = await proxyRes.json();
+        if (!proxyRes.ok) {
+          throw new Error(resData.error || 'Portal login failed.');
+        }
+        proxyData = resData.data;
+      } catch (err: any) {
+        return { user: null, profile: null, error: err };
+      }
+    }
 
     if (!isSupabaseConfigured) {
       await sleep(MOCK_DELAY);
       const mockProfiles = getMockData<UserProfile[]>('cozy_profiles', []);
-      const profile = mockProfiles.find(
+      let profile = mockProfiles.find(
         p => p.register_number?.toLowerCase() === registerNumber.trim().toLowerCase()
       );
 
       if (!profile) {
-        throw new Error('Invalid registration number or password.');
+        // Since we logged into the portal, let's create a profile for them if they don't exist
+        if (proxyData) {
+          const newId = crypto.randomUUID();
+          profile = {
+            id: newId,
+            name: `Student ${registerNumber}`,
+            email: internalEmail,
+            register_number: registerNumber.trim().toUpperCase(),
+            department: 'Computer Science',
+            semester: 1,
+            section: 'A',
+            created_at: new Date().toISOString(),
+          };
+          mockProfiles.push(profile);
+          setMockData('cozy_profiles', mockProfiles);
+          initializeMockDB(profile.id);
+        } else {
+          return { user: null, profile: null, error: new Error('Invalid registration number or password.') };
+        }
       }
 
       setMockData('cozy_session', profile);
-      initializeMockDB(profile.id);
+      
+      // If we got proxy data (attendance), update the demo DB with it
+      if (proxyData && Array.isArray(proxyData)) {
+        let existingAttendance = getMockData<AttendanceRecord[]>('cozy_attendance', []);
+        
+        // Remove old attendance for this user to replace with real portal data
+        existingAttendance = existingAttendance.filter(a => a.user_id !== profile!.id);
+        
+        for (const item of proxyData) {
+          existingAttendance.push({
+            id: crypto.randomUUID(),
+            user_id: profile!.id,
+            subject: item.subject,
+            attended_classes: item.attended,
+            total_classes: item.total,
+            attendance_percentage: item.total === 0 ? 100 : Math.round((item.attended / item.total) * 10000) / 100,
+            last_updated: new Date().toISOString()
+          });
+        }
+        setMockData('cozy_attendance', existingAttendance);
+      } else if (!proxyData) {
+        initializeMockDB(profile.id);
+      }
 
       return { user: { id: profile.id, email: profile.email }, profile, error: null };
     } else {

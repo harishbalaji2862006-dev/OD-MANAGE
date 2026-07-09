@@ -26,44 +26,38 @@ export const PortalSyncService = {
     userId: string,
     portalRegNo: string,
     portalPass: string,
+    captcha: string,
+    cookie: string,
     onProgress: (progress: SyncProgress) => void
   ): Promise<boolean> => {
     try {
-      // Stage 1: Connecting
+      // Stage 1: Authenticating & Scraping
       onProgress({ stage: 'connecting', message: 'Connecting to aims.rkmvc.ac.in...', percent: 15 });
-      await sleep(1500);
+      
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_code: portalRegNo,
+          password: portalPass,
+          captcha: captcha,
+          cookie: cookie
+        })
+      });
 
-      // Trigger user test failures for debugging
-      if (portalRegNo.toLowerCase() === 'error' || portalPass.toLowerCase() === 'wrong') {
-        onProgress({ stage: 'failed', message: 'Connection aborted: Handshake failed.', percent: 40 });
-        await dbLogs.addLog(userId, 'Failure', 'Failed to authenticate on aims.rkmvc.ac.in. Invalid credentials.');
-        return false;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to connect to portal.');
       }
 
-      // Stage 2: Authenticating
-      onProgress({ stage: 'authenticating', message: 'Submitting secure credentials...', percent: 40 });
-      await sleep(2000);
-
-      // Stage 3: Fetching
-      onProgress({ stage: 'fetching', message: 'Reading attendance grid from student dashboard...', percent: 65 });
-      await sleep(1800);
-
-      // Stage 4: Parsing
-      onProgress({ stage: 'parsing', message: 'Parsing course attendance tables...', percent: 80 });
-      await sleep(1200);
-
-      // Stage 5: Saving
-      onProgress({ stage: 'saving', message: 'Updating records in Supabase database...', percent: 90 });
+      // Stage 2: Parsing & Saving
+      onProgress({ stage: 'saving', message: 'Updating records in local database...', percent: 90 });
       
-      // Let's generate fresh attendance numbers simulating portal results
-      const syncedSubjects = [
-        { subject: 'Data Structures & Algorithms', attended: 30, total: 34 },
-        { subject: 'Database Management Systems', attended: 26, total: 32 },
-        { subject: 'Operating Systems', attended: 20, total: 24 },
-        { subject: 'Computer Networks', attended: 27, total: 30 },
-        { subject: 'Advanced Engineering Math', attended: 18, total: 22 },
-        { subject: 'Environmental Studies', attended: 10, total: 10 }
-      ];
+      const syncedSubjects = result.data;
+      if (!syncedSubjects || !Array.isArray(syncedSubjects)) {
+        throw new Error('Invalid data received from portal.');
+      }
 
       // Fetch current attendance records first to update them or add them
       const { data: currentAttendance } = await dbAttendance.getAttendance(userId);
@@ -82,7 +76,7 @@ export const PortalSyncService = {
       // Record logs
       await dbLogs.addLog(userId, 'Success', `Successfully synchronized ${syncedSubjects.length} subjects from AIMS.`);
 
-      // Stage 6: Done
+      // Stage 3: Done
       onProgress({ stage: 'success', message: 'Sync successful! All subjects updated.', percent: 100 });
       await sleep(1000);
       return true;

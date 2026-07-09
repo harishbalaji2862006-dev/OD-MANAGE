@@ -15,6 +15,12 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ userId, lastSyncTime, on
   const [showPassword, setShowPassword] = useState(false);
   const [saveSession, setSaveSession] = useState(true);
 
+  // New states for captcha
+  const [captchaImage, setCaptchaImage] = useState<string | null>(null);
+  const [sessionCookie, setSessionCookie] = useState<string>('');
+  const [captchaText, setCaptchaText] = useState('');
+  const [loadingCaptcha, setLoadingCaptcha] = useState(false);
+
   const [syncState, setSyncState] = useState<SyncProgress>({
     stage: 'idle',
     message: '',
@@ -37,6 +43,23 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ userId, lastSyncTime, on
     }
     setShowModal(true);
     setSyncState({ stage: 'idle', message: '', percent: 0 });
+    fetchCaptcha();
+  };
+
+  const fetchCaptcha = async () => {
+    setLoadingCaptcha(true);
+    setCaptchaText('');
+    try {
+      const res = await fetch('/api/captcha');
+      const data = await res.json();
+      if (data.image && data.cookie) {
+        setCaptchaImage(data.image);
+        setSessionCookie(data.cookie);
+      }
+    } catch (e) {
+      console.error('Failed to load captcha', e);
+    }
+    setLoadingCaptcha(false);
   };
 
   const handleStartSync = async (e: React.FormEvent) => {
@@ -53,7 +76,7 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ userId, lastSyncTime, on
       sessionStorage.removeItem('cozy_portal_pass');
     }
 
-    const success = await PortalSyncService.sync(userId, regNo, password, (progress) => {
+    const success = await PortalSyncService.sync(userId, regNo, password, captchaText, sessionCookie, (progress) => {
       setSyncState(progress);
     });
 
@@ -62,6 +85,9 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ userId, lastSyncTime, on
         setShowModal(false);
         onSyncComplete();
       }, 1200);
+    } else {
+      // Refresh captcha on failure
+      fetchCaptcha();
     }
   };
 
@@ -151,6 +177,40 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ userId, lastSyncTime, on
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                </div>
+
+                {/* Captcha */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1 ml-1 uppercase tracking-wider">Security Captcha</label>
+                  <div className="flex items-center gap-3 mb-2">
+                    {loadingCaptcha ? (
+                      <div className="h-14 w-40 bg-slate-200 animate-pulse rounded-md border border-slate-300 flex items-center justify-center">
+                        <span className="text-xs text-slate-400">Loading...</span>
+                      </div>
+                    ) : captchaImage ? (
+                      <img src={captchaImage} alt="Captcha" className="h-14 rounded-md border border-slate-300" />
+                    ) : (
+                      <div className="h-14 w-40 bg-red-50 text-red-400 text-[10px] rounded-md border border-red-200 flex items-center justify-center text-center p-2">
+                        Failed to load captcha
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={fetchCaptcha}
+                      className="p-2 text-brand-cozy hover:bg-brand-light rounded-full transition-all"
+                      title="Reload Captcha"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${loadingCaptcha ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={captchaText}
+                    onChange={(e) => setCaptchaText(e.target.value)}
+                    placeholder="Enter Captcha text"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-brand-cozy focus:ring-1 focus:ring-brand-cozy outline-none rounded-cozy-lg transition-all text-slate-700 placeholder-slate-400 text-sm"
+                  />
                 </div>
 
                 {/* Session checkbox */}

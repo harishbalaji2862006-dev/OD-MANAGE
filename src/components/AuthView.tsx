@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { dbAuth } from '../services/db';
 import { UserProfile } from '../types';
 import { Lock, Award, Sparkles, AlertCircle, Eye, EyeOff, BookOpen, Layers, User } from 'lucide-react';
@@ -12,6 +12,32 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const [registerNumber, setRegisterNumber] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [captchaText, setCaptchaText] = useState('');
+  const [captchaImg, setCaptchaImg] = useState('');
+  const [cookie, setCookie] = useState('');
+  const [loadingCaptcha, setLoadingCaptcha] = useState(false);
+
+  const fetchCaptcha = async () => {
+    setLoadingCaptcha(true);
+    try {
+      const res = await fetch('http://localhost:3001/api/captcha');
+      const data = await res.json();
+      if (data.image) {
+        setCaptchaImg(data.image);
+        setCookie(data.cookie);
+      }
+    } catch (e) {
+      console.error('Failed to load captcha', e);
+    } finally {
+      setLoadingCaptcha(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isLogin) {
+      fetchCaptcha();
+    }
+  }, [isLogin]);
 
   // Register-only fields
   const [name, setName] = useState('');
@@ -34,11 +60,15 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
       setError('Please enter your password.');
       return;
     }
+    if (isLogin && !captchaText) {
+      setError('Please enter the captcha.');
+      return;
+    }
 
     setLoading(true);
     try {
       if (isLogin) {
-        const { profile, error: err } = await dbAuth.signIn(registerNumber, password);
+        const { profile, error: err } = await dbAuth.signIn(registerNumber, password, captchaText, cookie);
         if (err) throw err;
         if (profile) onAuthSuccess(profile, dbAuth.isDemoMode);
       } else {
@@ -65,6 +95,8 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
       } else if (msg.includes('Email not confirmed')) {
         // Email confirmation is still ON in Supabase — guide the user
         setError('⚠️ Email confirmation is enabled in Supabase. Go to Supabase Dashboard → Authentication → Providers → Email → turn OFF "Confirm email" → Save.');
+      } else if (msg.toLowerCase().includes('rate limit')) {
+        setError('⚠️ Supabase rate limit exceeded. Go to Supabase Dashboard → Authentication → Rate Limits → increase the limits to allow more signups.');
       } else {
         // Always show the real error so you can diagnose it
         setError(msg || 'Something went wrong. Please try again.');
@@ -144,6 +176,8 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                 <Award className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                 <input
                   id="reg_number_input"
+                  name="username"
+                  autoComplete="username"
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
@@ -234,6 +268,8 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                 <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                 <input
                   id="password_input"
+                  name="password"
+                  autoComplete="current-password"
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
@@ -253,6 +289,39 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                 <p className="text-[10px] text-slate-400 mt-1 ml-1">Use the same password as your AIMS portal</p>
               )}
             </div>
+
+            {/* Captcha */}
+            {isLogin && (
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-0.5">Captcha</label>
+                <div className="flex gap-3 mb-2">
+                  <div className="flex-1 bg-white/50 rounded-cozy-lg border border-slate-200 overflow-hidden flex items-center justify-center min-h-[50px]">
+                    {loadingCaptcha ? (
+                      <span className="w-5 h-5 border-2 border-brand-cozy border-t-transparent rounded-full animate-spin" />
+                    ) : captchaImg ? (
+                      <img src={captchaImg} alt="captcha" className="h-full object-contain mix-blend-multiply" />
+                    ) : (
+                      <span className="text-xs text-slate-400">Failed to load</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchCaptcha}
+                    className="px-3 py-2 bg-slate-100 text-slate-600 rounded-cozy-lg hover:bg-slate-200 transition-colors text-xs font-bold"
+                  >
+                    Refresh
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  required
+                  value={captchaText}
+                  onChange={(e) => setCaptchaText(e.target.value)}
+                  placeholder="Enter captcha text"
+                  className="w-full px-4 py-2.5 bg-white/80 border border-slate-200 focus:border-brand-cozy focus:ring-1 focus:ring-brand-cozy outline-none rounded-cozy-lg transition-all text-slate-700 placeholder-slate-400 text-sm"
+                />
+              </div>
+            )}
 
             {/* Submit */}
             <button
