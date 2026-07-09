@@ -151,7 +151,7 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ userId, lastSyncTime, on
                     required
                     value={regNo}
                     onChange={(e) => setRegNo(e.target.value)}
-                    placeholder="Enter Portal Register Number (e.g. 23MCS012)"
+                    placeholder="Enter Portal Register Number (e.g. 2413281033018)"
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-brand-cozy focus:ring-1 focus:ring-brand-cozy outline-none rounded-cozy-lg transition-all text-slate-700 placeholder-slate-400 text-sm"
                   />
                   <p className="text-[10px] text-slate-400 mt-1 ml-1">Type 'error' to test auth validation failure.</p>
