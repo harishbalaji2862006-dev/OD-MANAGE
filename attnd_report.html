@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+  <head>
+  	<link rel="shortcut icon" type="image/x-icon" href="https://aims.rkmvc.ac.in/assets/images/favicon.ico">
+    <meta charset="UTF-8">
+    <title>RKMVC - AIMS | Student Log in</title>
+    <meta content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no' name='viewport'>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://aims.rkmvc.ac.in/assets/plugins_3/fontawesome-free/css/all.min.css">
+    <!-- icheck bootstrap -->
+    <link rel="stylesheet" href="https://aims.rkmvc.ac.in/assets/plugins_3/icheck-bootstrap/icheck-bootstrap.min.css">
+    <!-- Theme style -->
+    <link rel="stylesheet" href="https://aims.rkmvc.ac.in/assets/dist_3/css/adminlte.min.css">
+    <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css" rel="stylesheet" type="text/css" />
+    <style>
+    .g-recaptcha {
+    transform:scale(.73);
+    transform-origin:0 0;
+}
+    
+    </style>
+  </head>
+  <body class="hold-transition login-page" ng-app="loginApp" ng-controller="loginCtrl">
+    <div class="login-box">
+      <div class="login-logo">
+      	<img src="https://aims.rkmvc.ac.in/assets/images/rkm-logo.png" height="115" width="100" class="user-image" alt="LOGO"/><br>
+      	<b>RKMVC - AIMS</b><br>Student Portal
+      </div><!-- /.login-logo -->
+      <div class="card">
+        <div class="card-body login-card-body">
+        <!--<p class="login-box-msg">Sign In</p>-->
+                <div class="row">
+            <div class="col-md-12">
+                            </div>
+        </div>
+                        <form name="login" method="post" action="/student/do_stud_login">
+        <p class="login-box-msg">
+              <!--  Login using &nbsp; &nbsp; <input id="first" type="radio" name="user_type" ng-model="content" value="email" checked> Email
+        &nbsp; &nbsp; <input id="other" type="radio" name="user_type" ng-model="content" value="phone"> Phone</p>
+          <div class="form-group has-feedback" ng-show="content == 'email'">
+            <input type="email" class="form-control" placeholder="Email" name="email" autocomplete="off" autofocus="" ng-model="email" required />
+            <span class="fa fa-envelope form-control-feedback"></span>
+          </div>
+          <div class="form-group has-feedback" ng-show="content == 'phone'">
+            <input type="text" class="form-control" placeholder="Phone" name="phone" autocomplete="off" autofocus="" ng-model="phone"  />
+            <span class="fa fa-phone form-control-feedback"></span>
+          </div>-->
+		  <div class="input-group mb-3" >
+            <input type="text" class="form-control" placeholder="Student Regn. No." name="student_code" maxlength="15" required />
+            <div class="input-group-append">
+                <div class="input-group-text">
+    	            <span class="fas fa-graduation-cap"></span>
+                </div>
+            </div>
+          </div>
+          <!--<div class="input-group mb-3" >
+            <input type="text" class="form-control" placeholder="Student email" name="student_email" maxlength="50" required />
+            <div class="input-group-append">
+                <div class="input-group-text">
+    	            <span class="fas fa-envelope"></span>
+                </div>
+            </div>
+          </div> -->
+          <div class="input-group mb-3">
+            <input type="password" class="form-control" placeholder="Password" id="password" name="password" autocomplete="off" ng-model="password" required />
+            <div class="input-group-append">
+                <div class="input-group-text">
+					<span class="fa fa-eye-slash" id="showhide" style="cursor:pointer;" onclick="return showPassword(this);"></span>
+				</div>
+            </div>
+          </div>
+          <div class="form-group  mb-3">
+            <span id="captImg" class="captcha-img"><img src="https://aims.rkmvc.ac.in/assets/captcha/1783580647.7903.jpg" width="200" height="60" style="border:0;" alt=" " /></span>
+            <a style="cursor:pointer;" class="reload-captcha refreshCaptcha btn btn-info btn-sm" ><i class="fa fa-refresh"></i> Get Another</a><br/><br/>
+            <input type="text" class="form-control" placeholder="Enter Captcha" name="captcha" autocomplete="off" required />
+          </div>
+          <div class="row">
+            <div class="col-12">    
+              <!--<div class="checkbox icheck">
+                <label>
+                  <input type="checkbox"> Remember Me
+                </label>
+              </div>-->
+                            <!-- <div class="g-recaptcha" style="width:400px" data-sitekey=""></div> -->
+            </div><!-- /.col -->
+            </div>
+            <div class="row">
+            <div class="col-8">
+            </div>
+            <div class="col-4">
+              <!--<input type="submit" class="btn btn-primary btn-block btn-flat" value="Sign In" />-->
+              <input type="hidden" name="submit_data" value="1">
+              <button type="submit" class="btn btn-primary btn-block"><i class="fas fa-arrow-right"></i> Log in</button>
+            </div><!-- /.col -->
+          </div>
+        </form>
+        <!--<a href="https://aims.rkmvc.ac.in/admission/register">Register</a>--><!-- |--> 
+        <a href="https://aims.rkmvc.ac.in/student/forgotPassword">Forgot Password?</a>
+      </div>
+    </div><!-- /.login-box -->
+    <script src="https://aims.rkmvc.ac.in/assets/plugins_3/jquery/jquery.min.js"></script>
+    <!-- Bootstrap 4 -->
+    <script src="https://aims.rkmvc.ac.in/assets/plugins_3/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <!-- AdminLTE App -->
+    <script src="https://aims.rkmvc.ac.in/assets/dist_3/js/adminlte.min.js"></script>
+<!--     <script src="https://www.google.com/recaptcha/api.js" async defer></script> -->
+  </body>
+</html>
+<script>
+$(document).ready(function(){
+    var base_url = 'https://aims.rkmvc.ac.in/';
+		$('.reload-captcha').click(function(event){
+            event.preventDefault();
+            $.ajax({
+                url:base_url+'student/newcaptcha',
+                dataType: "text",  
+                cache:false,
+                success:function(data){
+					$('#captImg').html(data);
+                }
+		});            
+	});
+});
+
+function showPassword(field){
+    var x = document.getElementById("password");
+    var y = document.getElementById(field.id);
+    
+    if (x.type === "password") {
+    	x.type = "text";
+    	y.classList.remove("fa-eye-slash");
+    	y.classList.add("fa-eye");
+    } else {
+        x.type = "password";
+        y.classList.remove("fa-eye");
+    	y.classList.add("fa-eye-slash");
+    }
+}
+</script>

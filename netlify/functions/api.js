@@ -207,13 +207,30 @@ app.post('/api/login', async (req, res) => {
     if (attendanceData.length === 0) {
       const pageTitle = $('title').text().trim() || 'No Title';
       const isLoginBox = attendanceRes.data.includes('login-box') ? 'Yes' : 'No';
-      console.warn('Could not find attendance tables, structure may have changed. Returning demo data.');
+      // Return raw HTML chunks as subject names for visual debugging
+      const bodyHtml = $('body').html() || attendanceRes.data;
+      // Strip scripts and styles to focus on content
+      const $dbg = cheerio.load(bodyHtml);
+      $dbg('script, style, link, meta').remove();
+      const cleanHtml = $dbg.text().replace(/\s+/g, ' ').trim();
+      
+      const debugData = [
+        { subject: `[INFO] HTTP ${attendanceRes.status} | Title: ${pageTitle} | LoginBox: ${isLoginBox} | Len: ${attendanceRes.data.length}`, attended: 0, total: 0 },
+      ];
+      
+      // Split clean text into ~200 char chunks and add as subjects
+      for (let i = 0; i < Math.min(cleanHtml.length, 2000); i += 200) {
+        debugData.push({
+          subject: `[HTML ${i}] ${cleanHtml.substring(i, i + 200)}`,
+          attended: 0,
+          total: 0
+        });
+      }
+      
+      console.warn('Could not find attendance tables. Returning HTML debug chunks.');
       return res.json({
         success: true,
-        data: [
-          { subject: `Debug: HTTP ${attendanceRes.status} | Title: ${pageTitle}`, attended: attendanceRes.status, total: 400 },
-          { subject: `Debug: LoginBox=${isLoginBox} | Len=${attendanceRes.data.length}`, attended: 1, total: 1 }
-        ]
+        data: debugData
       });
     }
 
