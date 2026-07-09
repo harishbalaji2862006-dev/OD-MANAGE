@@ -68,6 +68,8 @@ app.post('/api/login', async (req, res) => {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Cookie': cookie,
+        'Referer': 'https://aims.rkmvc.ac.in/student/loginPage',
+        'Origin': 'https://aims.rkmvc.ac.in',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
       maxRedirects: 0,
