@@ -175,12 +175,14 @@ app.post('/api/login', async (req, res) => {
     });
 
     if (attendanceData.length === 0) {
+      const pageTitle = $('title').text().trim() || 'No Title';
+      const isLoginBox = attendanceRes.data.includes('login-box') ? 'Yes' : 'No';
       console.warn('Could not find attendance tables, structure may have changed. Returning demo data.');
       return res.json({
         success: true,
         data: [
-          { subject: 'Data Structures (Mocked Fallback)', attended: 28, total: 32 },
-          { subject: 'Database Management (Mocked Fallback)', attended: 24, total: 30 }
+          { subject: `Debug: HTTP ${attendanceRes.status} | Title: ${pageTitle}`, attended: attendanceRes.status, total: 400 },
+          { subject: `Debug: LoginBox=${isLoginBox} | Len=${attendanceRes.data.length}`, attended: 1, total: 1 }
         ]
       });
     }
