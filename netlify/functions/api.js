@@ -4,6 +4,11 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import http from 'http';
+import https from 'https';
+
+const httpAgent = new http.Agent({ family: 4 });
+const httpsAgent = new https.Agent({ family: 4 });
 
 const app = express();
 app.use(cors());
@@ -14,7 +19,10 @@ const BASE_URL = 'https://aims.rkmvc.ac.in';
 
 app.get('/api/captcha', async (req, res) => {
   try {
-    const loginRes = await axios.get(`${BASE_URL}/student/loginPage`);
+    const loginRes = await axios.get(`${BASE_URL}/student/loginPage`, {
+      httpAgent, httpsAgent,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+    });
     const loginCookies = loginRes.headers['set-cookie'] || [];
     const loginCookieString = loginCookies.map(c => c.split(';')[0]).join('; ');
     
@@ -26,7 +34,11 @@ app.get('/api/captcha', async (req, res) => {
         
         const imgRes = await axios.get(imgSrc, {
             responseType: 'arraybuffer',
-            headers: { 'Cookie': loginCookieString }
+            httpAgent, httpsAgent,
+            headers: { 
+              'Cookie': loginCookieString,
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
         });
         const base64 = Buffer.from(imgRes.data, 'binary').toString('base64');
         return res.json({
@@ -49,23 +61,20 @@ app.post('/api/login', async (req, res) => {
   }
 
   try {
-    const formData = new URLSearchParams();
-    formData.append('student_code', student_code);
-    formData.append('password', password);
-    formData.append('captcha', captcha);
-    formData.append('submit_data', '1');
+    const qs = `student_code=${encodeURIComponent(student_code)}&password=${encodeURIComponent(password)}&captcha=${encodeURIComponent(captcha)}&submit_data=1`;
 
-    const loginRes = await axios.post(`${BASE_URL}/student/do_stud_login`, formData.toString(), {
+    const loginRes = await axios.post(`${BASE_URL}/student/do_stud_login`, qs, {
+      httpAgent, httpsAgent,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Cookie': cookie,
-        'User-Agent': 'Mozilla/5.0'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
       maxRedirects: 0,
       validateStatus: (status) => status >= 200 && status < 400
     });
 
-    if (loginRes.status === 200 && loginRes.data.includes('login-box')) {
+    if (loginRes.status === 200 && typeof loginRes.data === 'string' && loginRes.data.includes('login-box')) {
        const $ = cheerio.load(loginRes.data);
        const errorText = $('.alert, .text-danger, p').text().trim() || 'Invalid credentials or Captcha.';
        return res.status(401).json({ error: errorText });
@@ -79,9 +88,10 @@ app.post('/api/login', async (req, res) => {
     }
 
     const attendanceRes = await axios.get(`${BASE_URL}/student/attendance`, {
+      httpAgent, httpsAgent,
       headers: {
         'Cookie': finalCookieString,
-        'User-Agent': 'Mozilla/5.0'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       }
     });
 
@@ -115,7 +125,7 @@ app.post('/api/login', async (req, res) => {
     res.json({ success: true, data: attendanceData });
   } catch (err) {
     console.error('Login error:', err.message);
-    res.status(500).json({ error: 'Failed to communicate with portal' });
+    res.status(500).json({ error: `Failed to communicate with portal: ${err.message}` });
   }
 });
 
