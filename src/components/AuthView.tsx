@@ -20,7 +20,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const fetchCaptcha = async () => {
     setLoadingCaptcha(true);
     try {
-      const res = await fetch('http://localhost:3001/api/captcha');
+      const res = await fetch('/api/captcha');
       const data = await res.json();
       if (data.image) {
         setCaptchaImg(data.image);
