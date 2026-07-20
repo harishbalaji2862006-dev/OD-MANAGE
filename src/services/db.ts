@@ -246,36 +246,41 @@ export const dbAuth = {
   signIn: async (registerNumber: string, password: string, captcha?: string, cookie?: string) => {
     const internalEmail = regToEmail(registerNumber);
 
-    // Try logging in via portal proxy if captcha and cookie are provided
-    let proxyData: any = null;
-    if (captcha && cookie) {
-      try {
-        const proxyRes = await fetch('/api/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            student_code: registerNumber,
-            password,
-            captcha,
-            cookie
-          })
-        });
-        const resData = await proxyRes.json();
-        if (!proxyRes.ok) {
-          throw new Error(resData.error || 'Portal login failed.');
-        }
-        proxyData = resData.data;
-      } catch (err: any) {
-        return { user: null, profile: null, error: err };
-      }
-    }
-
     if (!isSupabaseConfigured) {
       await sleep(MOCK_DELAY);
       const mockProfiles = getMockData<UserProfile[]>('cozy_profiles', []);
       let profile = mockProfiles.find(
         p => p.register_number?.toLowerCase() === registerNumber.trim().toLowerCase()
       );
+
+      // Try logging in via portal proxy if captcha and cookie are provided
+      let proxyData: any = null;
+      if (captcha && cookie) {
+        try {
+          const proxyRes = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              student_code: registerNumber,
+              password,
+              captcha,
+              cookie
+            })
+          });
+          const resData = await proxyRes.json();
+          if (proxyRes.ok) {
+            proxyData = resData.data;
+          } else {
+            console.warn('Proxy login failed:', resData.error);
+            // If user doesn't exist in mock DB yet, and proxy fails, we can't create them
+            if (!profile) {
+              return { user: null, profile: null, error: new Error(resData.error || 'Portal login failed.') };
+            }
+          }
+        } catch (err: any) {
+          console.warn('Proxy request failed:', err);
+        }
+      }
 
       if (!profile) {
         // Since we logged into the portal, let's create a profile for them if they don't exist
@@ -331,6 +336,7 @@ export const dbAuth = {
 
       return { user: { id: profile.id, email: profile.email }, profile, error: null };
     } else {
+      // Supabase is configured: Sign in to Supabase FIRST
       const { data, error } = await supabase!.auth.signInWithPassword({
         email: internalEmail,
         password
@@ -342,6 +348,30 @@ export const dbAuth = {
         .select('*')
         .eq('id', data.user?.id)
         .single();
+
+      // Try logging in via portal proxy if captcha and cookie are provided to sync attendance
+      if (captcha && cookie) {
+        try {
+          const proxyRes = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              student_code: registerNumber,
+              password,
+              captcha,
+              cookie
+            })
+          });
+          
+          if (!proxyRes.ok) {
+            console.warn('AIMS Portal proxy login failed. User is logged into the app, but attendance sync might be skipped.');
+          }
+          // The proxy route itself saves attendance data or returns it.
+          // Since the app just relies on the proxy updating attendance, we don't block login if it fails.
+        } catch (err: any) {
+          console.warn('Proxy request failed:', err);
+        }
+      }
 
       return { user: data.user, profile, error: pError };
     }

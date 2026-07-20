@@ -91,7 +91,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
       if (msg.includes('already registered') || msg.includes('already exists')) {
         setError('This registration number is already registered. Try signing in instead.');
       } else if (msg.includes('Invalid login credentials')) {
-        setError('Incorrect registration number or password. Please check and try again.');
+        setError('Incorrect registration number/password, OR Email Confirmation is ON. If you just registered, go to Supabase Dashboard → Authentication → Providers → Email → turn OFF "Confirm email".');
       } else if (msg.includes('Email not confirmed')) {
         // Email confirmation is still ON in Supabase — guide the user
         setError('⚠️ Email confirmation is enabled in Supabase. Go to Supabase Dashboard → Authentication → Providers → Email → turn OFF "Confirm email" → Save.');
