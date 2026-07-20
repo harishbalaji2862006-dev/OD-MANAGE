@@ -336,20 +336,14 @@ export const dbAuth = {
 
       return { user: { id: profile.id, email: profile.email }, profile, error: null };
     } else {
-      // Supabase is configured: Sign in to Supabase FIRST
-      const { data, error } = await supabase!.auth.signInWithPassword({
-        email: internalId,
-        password
-      });
-      if (error) return { user: null, profile: null, error };
+      // ── Supabase is configured ──
+      // Portal authentication is PRIMARY when captcha+cookie are provided.
+      // Supabase auth is a best-effort companion for data persistence.
 
-      const { data: profile, error: pError } = await supabase!
-        .from('users')
-        .select('*')
-        .eq('id', data.user?.id)
-        .single();
+      let proxyData: any = null;
+      let portalSuccess = false;
 
-      // Try logging in via portal proxy if captcha and cookie are provided to sync attendance
+      // Step 1: Try portal proxy authentication FIRST (if captcha+cookie provided)
       if (captcha && cookie) {
         try {
           const proxyRes = await fetch('/api/login', {
@@ -362,18 +356,162 @@ export const dbAuth = {
               cookie
             })
           });
-          
-          if (!proxyRes.ok) {
-            console.warn('AIMS Portal proxy login failed. User is logged into the app, but attendance sync might be skipped.');
+          const resData = await proxyRes.json();
+          if (proxyRes.ok) {
+            proxyData = resData.data;
+            portalSuccess = true;
+          } else {
+            // Portal rejected the credentials — this is a real auth failure
+            return { user: null, profile: null, error: new Error(resData.error || 'Portal login failed. Check your registration number, password, and captcha.') };
           }
-          // The proxy route itself saves attendance data or returns it.
-          // Since the app just relies on the proxy updating attendance, we don't block login if it fails.
         } catch (err: any) {
-          console.warn('Proxy request failed:', err);
+          console.warn('Portal proxy request failed:', err);
+          // Fall through to try Supabase-only auth
         }
       }
 
-      return { user: data.user, profile, error: pError };
+      // Step 2: Try Supabase auth (best-effort)
+      let supaUser: any = null;
+      let supaProfile: any = null;
+
+      // Try sign-in first
+      const { data: signInData, error: signInError } = await supabase!.auth.signInWithPassword({
+        email: internalId,
+        password
+      });
+
+      if (!signInError && signInData?.user) {
+        supaUser = signInData.user;
+        // Fetch profile
+        const { data: prof } = await supabase!
+          .from('users')
+          .select('*')
+          .eq('id', signInData.user.id)
+          .single();
+        supaProfile = prof;
+
+        // If profile was deleted from public.users, recreate it
+        if (!supaProfile) {
+          const profileData = {
+            id: signInData.user.id,
+            name: `Student ${registerNumber}`,
+            email: internalId,
+            register_number: registerNumber.trim(),
+            department: '',
+            semester: 1,
+            section: '',
+          };
+          const { data: newProf } = await supabase!
+            .from('users')
+            .upsert(profileData, { onConflict: 'id' })
+            .select()
+            .single();
+          supaProfile = newProf || profileData;
+        }
+      } else {
+        // Sign-in failed — try auto sign-up (user might not exist in auth yet)
+        console.warn('Supabase signIn failed:', signInError?.message, '— trying signUp...');
+        const { data: signUpData, error: signUpError } = await supabase!.auth.signUp({
+          email: internalId,
+          password,
+          options: { data: { register_number: registerNumber.trim() } }
+        });
+
+        if (!signUpError && signUpData?.user) {
+          supaUser = signUpData.user;
+          await sleep(500);
+          const profileData = {
+            id: signUpData.user.id,
+            name: `Student ${registerNumber}`,
+            email: internalId,
+            register_number: registerNumber.trim(),
+            department: '',
+            semester: 1,
+            section: '',
+          };
+          const { data: newProf } = await supabase!
+            .from('users')
+            .upsert(profileData, { onConflict: 'id' })
+            .select()
+            .single();
+          supaProfile = newProf || profileData;
+        } else {
+          console.warn('Supabase signUp also failed:', signUpError?.message);
+        }
+      }
+
+      // Step 3: If portal succeeded but Supabase failed entirely, use localStorage fallback
+      if (portalSuccess && !supaUser) {
+        console.warn('Portal auth succeeded but Supabase auth failed. Using localStorage session.');
+        const fallbackId = crypto.randomUUID();
+        const fallbackProfile: UserProfile = {
+          id: fallbackId,
+          name: `Student ${registerNumber}`,
+          email: internalId,
+          register_number: registerNumber.trim(),
+          department: '',
+          semester: 1,
+          section: '',
+          created_at: new Date().toISOString(),
+        };
+        setMockData('cozy_session', fallbackProfile);
+
+        // Store attendance from portal
+        if (proxyData && Array.isArray(proxyData)) {
+          let existingAttendance = getMockData<AttendanceRecord[]>('cozy_attendance', []);
+          existingAttendance = existingAttendance.filter(a => a.user_id !== fallbackId);
+          for (const item of proxyData) {
+            existingAttendance.push({
+              id: crypto.randomUUID(),
+              user_id: fallbackId,
+              subject: item.subject,
+              attended_classes: item.attended,
+              total_classes: item.total,
+              attendance_percentage: item.percentage != null
+                ? item.percentage
+                : (item.total === 0 ? 0 : Math.round((item.attended / item.total) * 10000) / 100),
+              class_hours: item.classHours ?? undefined,
+              hours_attended: item.hoursAttended ?? undefined,
+              teacher: item.teacher ?? undefined,
+              last_updated: new Date().toISOString()
+            });
+          }
+          setMockData('cozy_attendance', existingAttendance);
+        }
+
+        return { user: { id: fallbackId, email: internalId }, profile: fallbackProfile, error: null };
+      }
+
+      // Step 4: If neither portal nor Supabase succeeded
+      if (!supaUser) {
+        return { user: null, profile: null, error: new Error('Incorrect registration number or password.') };
+      }
+
+      // Step 5: Store portal attendance data in Supabase if available
+      if (proxyData && Array.isArray(proxyData) && supaUser) {
+        try {
+          // Delete old attendance for this user
+          await supabase!.from('attendance').delete().eq('user_id', supaUser.id);
+          // Insert new
+          const rows = proxyData.map((item: any) => ({
+            user_id: supaUser.id,
+            subject: item.subject,
+            attended_classes: item.attended,
+            total_classes: item.total,
+            attendance_percentage: item.percentage != null
+              ? item.percentage
+              : (item.total === 0 ? 0 : Math.round((item.attended / item.total) * 10000) / 100),
+            class_hours: item.classHours ?? undefined,
+            hours_attended: item.hoursAttended ?? undefined,
+            teacher: item.teacher ?? undefined,
+          }));
+          await supabase!.from('attendance').insert(rows);
+        } catch (e) {
+          console.warn('Failed to persist attendance to Supabase:', e);
+        }
+      }
+
+      return { user: supaUser, profile: supaProfile, error: null };
     }
   },
 
