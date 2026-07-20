@@ -91,14 +91,12 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
       if (msg.includes('already registered') || msg.includes('already exists')) {
         setError('This registration number is already registered. Try signing in instead.');
       } else if (msg.includes('Invalid login credentials')) {
-        setError('Incorrect registration number/password, OR Email Confirmation is ON. If you just registered, go to Supabase Dashboard → Authentication → Providers → Email → turn OFF "Confirm email".');
-      } else if (msg.includes('Email not confirmed')) {
-        // Email confirmation is still ON in Supabase — guide the user
-        setError('⚠️ Email confirmation is enabled in Supabase. Go to Supabase Dashboard → Authentication → Providers → Email → turn OFF "Confirm email" → Save.');
+        setError('Incorrect registration number or password. Please check and try again.');
+      } else if (msg.includes('Email not confirmed') || msg.includes('Confirm email')) {
+        setError('⚠️ Account not yet activated. Please contact your administrator.');
       } else if (msg.toLowerCase().includes('rate limit')) {
-        setError('⚠️ Supabase rate limit exceeded. Go to Supabase Dashboard → Authentication → Rate Limits → increase the limits to allow more signups.');
+        setError('⚠️ Too many attempts. Please wait a moment and try again.');
       } else {
-        // Always show the real error so you can diagnose it
         setError(msg || 'Something went wrong. Please try again.');
       }
     } finally {

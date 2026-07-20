@@ -123,11 +123,11 @@ const initializeMockDB = (userId: string) => {
 // ========================================================
 
 // -------------------------------------------------------
-// Helper: convert register number to internal fake email
-// e.g. "23MCS012" -> "23mcs012@rkmvc.local"
-// This lets Supabase Auth work without sending real emails.
+// Helper: convert register number to internal identifier
+// Only used as a Supabase Auth key when Supabase is configured.
+// In demo mode, auth is purely by registration number.
 // -------------------------------------------------------
-const regToEmail = (regNumber: string) =>
+const regToInternalId = (regNumber: string) =>
   `${regNumber.trim().toLowerCase()}@student.rkmvc.ac.in`;
 
 const DEMO_REG_NO = '2413281033018';
@@ -139,7 +139,7 @@ const seedDemoStudent = () => {
     const newProfile: UserProfile = {
       id: demoId,
       name: 'Demo Student',
-      email: regToEmail(DEMO_REG_NO),
+      email: regToInternalId(DEMO_REG_NO),
       register_number: DEMO_REG_NO,
       department: 'Computer Science',
       semester: 4,
@@ -159,7 +159,7 @@ export const dbAuth = {
 
   // registerNumber + password + profile details
   signUp: async (registerNumber: string, password: string, name: string, details: Partial<UserProfile>) => {
-    const internalEmail = regToEmail(registerNumber);
+    const internalId = regToInternalId(registerNumber);
 
     if (!isSupabaseConfigured) {
       await sleep(MOCK_DELAY);
@@ -173,8 +173,8 @@ export const dbAuth = {
       const newProfile: UserProfile = {
         id: newId,
         name,
-        email: internalEmail,
-        register_number: registerNumber.trim().toUpperCase(),
+        email: internalId,
+        register_number: registerNumber.trim(),
         department: details.department || '',
         semester: details.semester || 1,
         section: details.section || '',
@@ -186,10 +186,10 @@ export const dbAuth = {
       setMockData('cozy_session', newProfile);
       initializeMockDB(newId);
 
-      return { user: { id: newId, email: internalEmail }, profile: newProfile, error: null };
+      return { user: { id: newId, email: internalId }, profile: newProfile, error: null };
     } else {
       const { data, error } = await supabase!.auth.signUp({
-        email: internalEmail,
+        email: internalId,
         password,
         options: {
           emailRedirectTo: undefined,
@@ -218,7 +218,7 @@ export const dbAuth = {
       const profileData = {
         id: userId,
         name,
-        email: internalEmail,
+        email: internalId,
         register_number: registerNumber.trim().toUpperCase(),
         department: details.department || '',
         semester: details.semester || 1,
@@ -244,7 +244,7 @@ export const dbAuth = {
 
   // Login with register number + password + captcha
   signIn: async (registerNumber: string, password: string, captcha?: string, cookie?: string) => {
-    const internalEmail = regToEmail(registerNumber);
+    const internalId = regToInternalId(registerNumber);
 
     if (!isSupabaseConfigured) {
       await sleep(MOCK_DELAY);
@@ -289,8 +289,8 @@ export const dbAuth = {
           profile = {
             id: newId,
             name: `Student ${registerNumber}`,
-            email: internalEmail,
-            register_number: registerNumber.trim().toUpperCase(),
+            email: internalId,
+            register_number: registerNumber.trim(),
             department: 'Computer Science',
             semester: 1,
             section: 'A',
@@ -338,7 +338,7 @@ export const dbAuth = {
     } else {
       // Supabase is configured: Sign in to Supabase FIRST
       const { data, error } = await supabase!.auth.signInWithPassword({
-        email: internalEmail,
+        email: internalId,
         password
       });
       if (error) return { user: null, profile: null, error };
